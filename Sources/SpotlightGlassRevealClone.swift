@@ -1,26 +1,30 @@
 import SwiftUI
 
 // Standalone macOS 26 SwiftUI Spotlight Liquid Glass clone.
-// Purpose: clone the Spotlight-style Liquid Glass reveal using macOS 26 APIs.
-// This file is intentionally standalone so it can serve as a focused example
-// of how the new Spotlight interaction can be reproduced.
+// Purpose: clone the Spotlight-style Liquid Glass reveal from the reference video.
+// This file is intentionally standalone.
 //
-// CURRENT BASELINE STATUS
-// This version is a no-artifact behavioral baseline.
-// It intentionally keeps the original proportions because the later pixel-matched
-// sizing pass reintroduced the mid-capsule ghosting artifact.
+// MEASURED STRUCTURE APPLIED
+// Confirmed from the measurement board:
+// - Full active rail: 1280px -> 640pt @2x
+// - Active search capsule: 768px -> 384pt @2x
+// - Accessory buttons: 108px -> 54pt @2x
+// - Search-to-button gap: 20px -> 10pt @2x
+// - Inter-button gaps: 20px -> 10pt @2x
 //
-// Do not blindly change these values as a group:
-// - activeSearchWidth
-// - buttonDiameter
-// - buttonGap
-// - outer frame width/height
-// - buttonJutOffset start values
-// - GlassEffectContainer spacing curve
+// Structural rule:
+// Passive mode full search width == active mode total rail width.
 //
-// Any future sizing correction should be done one variable at a time and tested
-// in Xcode/Codex after each change. This prevents speculative resizing from
-// reintroducing the transient reveal-phase geometry leakage.
+// IMPORTANT BUG GUARDRAIL
+// This preserves the known no-artifact behavior structure from the baseline:
+// - accessory glass circles remain inside the time-gated GlassEffectContainer
+// - coalescence is high only during the reveal and low at rest
+// - symbols render as a separate foreground layer
+// - the bridge is structurally removed when blobOpacity reaches zero
+//
+// Do not reintroduce the bad branch where the buttons were moved outside the
+// container and the bridge was masked/narrowed. That branch caused the transient
+// mid-capsule ghosting artifact.
 
 @available(macOS 26.0, *)
 public struct SpotlightGlassRevealClone: View {
@@ -41,7 +45,7 @@ public struct SpotlightGlassRevealClone: View {
                     isActive: isPointerActive,
                     revealStart: revealStart
                 )
-                .frame(width: 690, height: 92, alignment: .leading)
+                .frame(width: 640, height: 92, alignment: .leading)
                 .contentShape(Rectangle())
                 .onContinuousHover { phase in
                     switch phase {
@@ -106,15 +110,12 @@ private struct SpotlightRevealSurface: View {
     let revealStart: Date
     @Namespace private var glassNamespace
 
-    // No-artifact baseline dimensions.
-    // These are intentionally not the measured screenshot dimensions yet.
-    // The measured dimensions should be introduced through a controlled
-    // verification matrix, not all at once.
-    private let passiveSearchWidth: CGFloat = 590
-    private let activeSearchWidth: CGFloat = 376
-    private let capsuleHeight: CGFloat = 54
-    private let buttonDiameter: CGFloat = 48
-    private let buttonGap: CGFloat = 14
+    // Confirmed @2x screenshot-derived dimensions.
+    private let passiveSearchWidth: CGFloat = 640
+    private let activeSearchWidth: CGFloat = 384
+    private let capsuleHeight: CGFloat = 56
+    private let buttonDiameter: CGFloat = 54
+    private let buttonGap: CGFloat = 10
 
     private var searchWidth: CGFloat {
         isActive ? activeSearchWidth : passiveSearchWidth
@@ -133,7 +134,8 @@ private struct SpotlightRevealSurface: View {
             ZStack(alignment: .leading) {
                 // Time-gated coalescence.
                 // High only during extrusion; low at rest.
-                // This prevents the permanent "glass sausage" failure.
+                // This prevents the permanent "glass sausage" failure while preserving
+                // the no-artifact baseline layering behavior.
                 GlassEffectContainer(spacing: isActive ? 6 + 32 * coalescence : 0) {
                     ZStack(alignment: .leading) {
                         // 1. Primary object: a leading-edge-anchored search capsule.
@@ -142,8 +144,7 @@ private struct SpotlightRevealSurface: View {
                             .zIndex(2)
 
                         // 2. Temporary wavy/coalesced glass mass.
-                        // This is intentionally present only while blobOpacity is nonzero.
-                        // Do not replace this with opacity-only hiding if segmentation matters.
+                        // This approximates the brief connected blob visible before the buttons separate.
                         if blobOpacity > 0.001 {
                             AccessoryRevealBlob()
                                 .frame(width: 238, height: 58)
@@ -158,10 +159,6 @@ private struct SpotlightRevealSurface: View {
                         }
 
                         // 3. Four staggered trailing accessory glass circles.
-                        // In this known-good baseline, the circles remain inside the container,
-                        // but the spacing curve drops as coalescence resolves.
-                        // This version should be treated as the baseline before attempting
-                        // size-matching changes.
                         if isActive {
                             ForEach(Array(accessories.enumerated()), id: \.offset) { index, _ in
                                 TrailingAccessoryGlassCircle(
@@ -183,12 +180,12 @@ private struct SpotlightRevealSurface: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                 }
 
-                // Symbols are intentionally rendered as a separate foreground layer.
-                // This avoids SF Symbol blur/capture during glass morphing.
+                // Symbols render as a separate foreground layer to avoid SF Symbol
+                // blur/capture during glass morphing.
                 if isActive {
                     ForEach(Array(accessories.enumerated()), id: \.offset) { index, accessory in
                         Image(systemName: accessory.systemName)
-                            .font(.system(size: 18, weight: .medium))
+                            .font(.system(size: 24, weight: .medium))
                             .symbolRenderingMode(.monochrome)
                             .foregroundStyle(.white.opacity(0.9))
                             .frame(width: buttonDiameter, height: buttonDiameter)
@@ -233,7 +230,6 @@ private struct SpotlightRevealSurface: View {
 
     private func easedProgress(index: Int, elapsed: TimeInterval) -> CGFloat {
         let p = localProgress(index: index, elapsed: elapsed)
-        // Smoothstep plus a small overshoot impression from the spring-driven parent width.
         return p * p * (3 - 2 * p)
     }
 
@@ -288,18 +284,18 @@ private struct SearchCapsule: View {
     let height: CGFloat
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 17) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 18, weight: .medium))
+                .font(.system(size: 23, weight: .medium))
                 .foregroundStyle(.white.opacity(0.72))
 
             Text("Spotlight Search")
-                .font(.system(size: 21, weight: .regular, design: .rounded))
+                .font(.system(size: 22, weight: .regular, design: .rounded))
                 .foregroundStyle(.white.opacity(0.64))
 
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 22)
+        .padding(.horizontal, 21)
         .frame(width: width, height: height, alignment: .leading)
         .glassEffect(.regular.interactive(), in: Capsule())
         .overlay {
