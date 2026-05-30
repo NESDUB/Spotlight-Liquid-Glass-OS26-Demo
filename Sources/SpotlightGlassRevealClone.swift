@@ -290,7 +290,7 @@ private struct SearchCapsule: View {
                 .foregroundStyle(.white.opacity(0.72))
 
             Text("Spotlight Search")
-                .font(.system(size: 22, weight: .regular, design: .rounded))
+                .font(.system(size: 26, weight: .regular, design: .rounded))
                 .foregroundStyle(.white.opacity(0.64))
 
             Spacer(minLength: 0)
